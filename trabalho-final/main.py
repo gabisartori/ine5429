@@ -50,50 +50,6 @@ def pollard(n: int, b: int) -> tuple[PollardResult, int, int]:
   else:
     raise ValueError("Unexpected GCD result") 
 
-def wiener(n: int, e: int): pass
-
-
-def chinese_remainder_theorem(
-  n: list[int],
-  a: list[int]
-):
-  N = 1
-  for ni in n: N *= ni
-
-
-  # m^e = result mod N
-  # We want to find m such that m^e ≡ result (mod N)
-
-  result = (sum([
-    ai * (N // ni) * multiplicative_inverse(N // ni, ni)
-    for ni, ai in zip(n, a)
-  ])% N)
-
-  return result
-
-
-def hastad_attack():
-  m = 67
-  best = 0
-  for e in primes:
-    # Make it so that there aren't any duplicate primes in the list
-    # This ensures all numbers N are coprime
-    p = primes[10:10+e]
-    q = primes[10+e:10+2*e]
-    # There has to be as many recipients as the exponent e, otherwise the attack won't work
-    n = [pi * qi for pi, qi in zip(p, q)]
-    a = [pow(m, e, ni) for ni in n]
-    result = int(chinese_remainder_theorem(n, a)**(1/e))
-    if result != m:
-      print(f"Falha no ataque de Hastad para {e=}")
-      print(f"Mensagem transmitida: {m}")
-      print(f"Mensagem recuperada: {result}")
-      break
-    best = e
-
-  print("Melhor ataque de Hastad")
-  print(f"Número de destinatários: {best}")
-
 @dataclass
 class PollardAttackData:
   size: int # Size of the prime numbers used in creating the RSA modulus n
@@ -170,8 +126,52 @@ def pollard_attack(max_b_size: int = config.MAX_B) -> tuple[list[PollardAttackDa
 
   return random, forged
 
+def wiener(n: int, e: int): pass
+
+def chinese_remainder_theorem(
+  n: list[int],
+  a: list[int]
+):
+  N = 1
+  for ni in n: N *= ni
+
+
+  # m^e = result mod N
+  # We want to find m such that m^e ≡ result (mod N)
+
+  result = (sum([
+    ai * (N // ni) * multiplicative_inverse(N // ni, ni)
+    for ni, ai in zip(n, a)
+  ])% N)
+
+  return result
+
+@dataclass
+class HastadAttackData:
+  e: int # Exponent used in the RSA encryption
+  message: int # Original message that was encrypted
+  recovered_message: int # Message recovered from the Hastad attack
+  time: float # Time it took to perform the Hastad attack
+
+def hastad_attack():
+  output = []
+  for e in range(2, 100):
+    start = time.time()
+    primes = [gen.random_prime(512) for _ in range(2*e)]
+    m = 67
+    # Make it so that there aren't any duplicate primes in the list
+    # This ensures all numbers N are coprime
+    p = primes[:e]
+    q = primes[e:]
+    # There has to be as many recipients as the exponent e, otherwise the attack won't work
+    n = [pi * qi for pi, qi in zip(p, q)]
+    a = [pow(m, e, ni) for ni in n]
+    result = int(chinese_remainder_theorem(n, a)**(1/e))
+    output.append(HastadAttackData(e, m, result, time.time() - start))
+
+  return output
+
 def main():
-  for x in pollard_attack(): print(x)
-  # hastad_attack()
+  for x in hastad_attack(): print(x)
 
 if __name__ == "__main__": main()
