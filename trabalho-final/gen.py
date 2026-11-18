@@ -1,4 +1,5 @@
 import random
+import time
 import config
 
 def is_prime_certain(n: int) -> bool:
@@ -73,5 +74,10 @@ def test():
     expected = is_prime_certain(n)
     assert is_prime(n) == expected, f"Failed for {n}: expected {expected}, got {is_prime(n)}"
 
+
+  start = time.time()
+  random_prime(1024)
+  end = time.time()
+  print(f"Time to generate a random 1024-bit prime: {end - start} seconds")
 if __name__ == "__main__":
   test()
