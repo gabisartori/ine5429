@@ -1,4 +1,5 @@
 import random
+import config
 
 def is_prime_certain(n: int) -> bool:
   if n <= 1: return False
@@ -12,26 +13,26 @@ def is_prime(n: int) -> bool:
     return miller_rabin_check(n)
   return False
 
-def fermat_check(n: int, k: int = 5) -> bool:
+def fermat_check(n: int, k: int = config.FERMAT_ITERATIONS) -> bool:
   """Perform Fermat's primality test on n using k iterations."""
+  # Edge cases for small enough values
   if n <= 1: return False
   if n == 2: return True
   if n == 3: return True
   if n % 2 == 0: return False
+
   for _ in range(k):
     a = random.randint(2, n - 2)
     if pow(a, n - 1, n) != 1:
       return False
   return True
 
-def miller_rabin_check(n: int, k: int = 5) -> bool:
+def miller_rabin_check(n: int, k: int = config.MILLER_RABIN_ITERATIONS) -> bool:
   """Perform Miller-Rabin primality test on n using k iterations."""
-  if n <= 1:
-    return False
-  if n <= 3:
-    return True
-  if n % 2 == 0:
-    return False
+  # Edge cases for small enough values
+  if n <= 1: return False
+  if n <= 3: return True
+  if n % 2 == 0: return False
 
   # Write n-1 as d*2^r
   r, d = 0, n - 1
@@ -60,9 +61,15 @@ def random_prime(bits: int) -> int:
     if is_prime(p):
       return p
 
+# TODO: Implement a function to generate weak primes suitable for Pollard's p-1 attack
+# This should be a product of small primes + 1.
+def weak_pollard_prime(bits: int) -> int:
+  """Generate a weak prime number suitable for Pollard's p-1 attack."""
+  return 3
+
 def test():
   """Run tests for the primality tests."""
-  for n in range(1, 1000):
+  for n in range(1, 100000):
     expected = is_prime_certain(n)
     assert is_prime(n) == expected, f"Failed for {n}: expected {expected}, got {is_prime(n)}"
 

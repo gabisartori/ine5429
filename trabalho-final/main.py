@@ -1,6 +1,8 @@
 from enum import Enum
-import time
 from dataclasses import dataclass
+import time
+import math
+import config
 
 import gen
 
@@ -15,13 +17,6 @@ def gcd(a: int, b: int) -> int:
   while b:
     a, b = b, a % b
   return abs(a)
-
-def mmc(numbers: list[int]) -> int:
-  """Calculate the least common multiple of a list of integers."""
-  lcm = 1
-  for number in numbers:
-    lcm = lcm * number // gcd(lcm, number)
-  return lcm
 
 def multiplicative_inverse(a: int, m: int) -> int:
   """Calculate the multiplicative inverse of a modulo m using the Extended Euclidean algorithm."""
@@ -43,7 +38,7 @@ class PollardResult(Enum):
   SUCCESS = 2
 
 def pollard(n: int, b: int) -> tuple[PollardResult, int, int]:
-  m = mmc([i for i in range(1, b+1)])
+  m = math.lcm(*range(1, b+1))
   a = 2
   g = gcd((a**m-1) % n, n)
   if g == n:
@@ -99,43 +94,84 @@ def hastad_attack():
   print("Melhor ataque de Hastad")
   print(f"Número de destinatários: {best}")
 
-def pollard_attack():
-  # Pick two random primes
-  timings = {}
-  sizes = range(2, 20)
-  total = 1
-  output = {size: 0 for size in sizes}
-  for size in sizes:
-    print(f"Fatorando números de {size} bits")
-    count = 0
-    attempts = 1
-    while count < total:
-      start = time.time()
+@dataclass
+class PollardAttackData:
+  size: int # Size of the prime numbers used in creating the RSA modulus n
+  successes: int # Number of successful attacks for prime numbers of size s
+  failures: int # Number of failed attacks for prime numbers of size s
+  ratio: float # Ratio of successful attacks to total attempts for prime numbers of size s
+  time: float # Time it took to find a vulnerable prime of size s
+  avarage_time: float # Average time it took to test a prime of size s
+
+def pollard_attack(max_b_size: int = config.MAX_B) -> tuple[list[PollardAttackData], list[PollardAttackData]]:
+  random = []
+  # Attack random primes of varying sizes
+  for size in config.POLLARD_ATTACK_SIZES:
+    successes = 0
+    failures = 0
+    size_start = time.time()
+    for _ in range(config.POLLARD_MAX_ATTEMPTS):
       p = gen.random_prime(size)
       q = gen.random_prime(size)
       n = p*q
 
       b = 2
-      while b < 15:
+      success = False
+      while b < max_b_size:
         match pollard(n, b):
           case (PollardResult.DECREASE, _, _):
-            attempts += 1
-            print("Falha no ataque de Pollard")
+            failures += 1
             break
           case (PollardResult.RAISE, _, _):
             b += 1
           case (PollardResult.SUCCESS, p, q):
-            output[size] += 1
-            count += 1
-            end = time.time()
-            timings[size] = timings.get(size, 0) + (end - start)
-            print(f"Total de tentativas: {attempts}")
+            successes += 1
+            success = True
             break
+      if not success:
+        failures += 1
+    end = time.time()
+    total_time = end - size_start
+    o = PollardAttackData(size, successes, failures, successes/(successes+failures), total_time, total_time / config.POLLARD_MAX_ATTEMPTS)
+    random.append(o)
+    print(o)
 
-  print(output)
-  print(timings)
+  forged = []
+  # Attack forged primes of varying sizes
+  for size in config.POLLARD_ATTACK_SIZES:
+    successes = 0
+    failures = 0
+    size_start = time.time()
+    for _ in range(config.POLLARD_MAX_ATTEMPTS):
+      p = gen.weak_pollard_prime(size)
+      q = gen.weak_pollard_prime(size)
+      n = p*q
+
+      b = 2
+      success = False
+      while b < max_b_size:
+        match pollard(n, b):
+          case (PollardResult.DECREASE, _, _):
+            failures += 1
+            break
+          case (PollardResult.RAISE, _, _):
+            b += 1
+          case (PollardResult.SUCCESS, p, q):
+            successes += 1
+            success = True
+            break
+      if not success:
+        failures += 1
+    end = time.time()
+    total_time = end - size_start
+    o = PollardAttackData(size, successes, failures, successes/(successes+failures), total_time, total_time / config.POLLARD_MAX_ATTEMPTS)
+    forged.append(o)
+    print(o)
+
+  return random, forged
+
 def main():
-  pollard_attack()
+  for x in pollard_attack(): print(x)
   # hastad_attack()
 
 if __name__ == "__main__": main()
