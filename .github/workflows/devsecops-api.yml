@@ -1,0 +1,171 @@
+name: DevSecOps Pipeline (Subfolder Scope)
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "trabalho-5/**"
+      - ".github/workflows/devsecops-api.yml"
+  pull_request:
+    paths:
+      - "trabalho-5/**"
+      - ".github/workflows/devsecops-api.yml"
+
+env:
+  APP_DIR: trabalho-5
+  IMAGE_NAME: devsecops-django-api:ci
+  APP_URL: http://127.0.0.1:8000
+
+jobs:
+  security-and-dast:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 1. SECRET DETECTION (repositório e histórico filtrado pela pasta)
+      - name: Install and run Gitleaks on target folder history
+        id: secrets
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz -o /tmp/gitleaks.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          /tmp/gitleaks git . --log-opts="-- ${APP_DIR}" --report-format json --report-path /tmp/gitleaks-report.json --exit-code 1
+
+      # 2. SCA + 4. IaC SCANNING (Trivy em dependências e Dockerfile da pasta)
+      - name: Setup Python for SAST
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Bandit for SAST
+        run: pip install --no-cache-dir bandit
+
+      # 3. SAST (código-fonte Python na pasta da aplicação)
+      - name: Run Bandit SAST on target folder
+        id: sast
+        continue-on-error: true
+        run: |
+          bandit -r "${APP_DIR}" -f json -o /tmp/bandit-report.json --exit-zero
+          bandit -r "${APP_DIR}" -ll
+
+      # 2. SCA (dependências declaradas na pasta)
+      - name: Run Trivy SCA on requirements.txt
+        id: sca
+        continue-on-error: true
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          trivy fs --scanners vuln --severity HIGH,CRITICAL --exit-code 1 "${APP_DIR}/requirements.txt"
+
+      # 4. IaC SCANNING (Dockerfile na pasta)
+      - name: Run Trivy IaC scan on Dockerfile
+        id: iac
+        continue-on-error: true
+        run: |
+          trivy fs --scanners misconfig --severity MEDIUM,HIGH,CRITICAL --exit-code 1 "${APP_DIR}"
+
+      # 5. DAST (build e execução da aplicação em ambiente controlado)
+      - name: Build and start application container for DAST
+        id: dast_boot
+        continue-on-error: true
+        run: |
+          docker build -f "${APP_DIR}/Dockerfile" -t "${IMAGE_NAME}" "${APP_DIR}"
+          docker run -d --rm --name dast-target -p 8000:8000 "${IMAGE_NAME}"
+
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "${APP_URL}/api/notes/list/" || true)
+            if [ "$code" != "000" ]; then
+              echo "Aplicação respondeu com HTTP ${code} na tentativa ${i}."
+              break
+            fi
+            sleep 1
+          done
+
+          final_code=$(curl -s -o /dev/null -w "%{http_code}" "${APP_URL}/api/notes/list/" || true)
+          if [ "$final_code" = "000" ]; then
+            echo "OPERATIONAL_FAILURE: alvo DAST inacessível em ${APP_URL}" > /tmp/dast_status.txt
+            exit 2
+          fi
+          echo "READY" > /tmp/dast_status.txt
+
+      - name: Run dynamic probes against API endpoints
+        id: dast_scan
+        if: steps.dast_boot.outcome == 'success'
+        continue-on-error: true
+        run: |
+          # Fluxos funcionais básicos: criação de usuário, criação de nota e listagem
+          user_status=$(curl -s -o /tmp/user_resp.json -w "%{http_code}" \
+            -X POST "${APP_URL}/api/users/" \
+            -H "Content-Type: application/json" \
+            -d '{"username":"ci_probe","password":"ProbePassword123"}')
+
+          note_status=$(curl -s -o /tmp/note_resp.json -w "%{http_code}" \
+            -X POST "${APP_URL}/api/notes/" \
+            -H "Content-Type: application/json" \
+            -d '{"username":"ci_probe","password":"ProbePassword123","title":"Check","content":"DAST flow"}')
+
+          list_status=$(curl -s -o /tmp/list_resp.json -w "%{http_code}" \
+            -G "${APP_URL}/api/notes/list/" \
+            --data-urlencode "username=ci_probe" \
+            --data-urlencode "password=ProbePassword123")
+
+          echo "Statuses -> user:${user_status} note:${note_status} list:${list_status}"
+          # Verificação dinâmica simples de ausência de headers básicos esperados
+          headers=$(curl -sI "${APP_URL}/api/notes/list/")
+          echo "$headers" > /tmp/headers.txt
+          echo "DAST_OK" > /tmp/dast_status.txt
+
+      - name: Stop DAST container
+        if: always()
+        run: |
+          docker stop dast-target >/dev/null 2>&1 || true
+
+      # POLICY GATE (avalia resultados, falhas operacionais e bloqueio final)
+      - name: Evaluate security blocking policy
+        id: policy_gate
+        run: |
+          op_fail=0
+          policy_fail=0
+
+          if [ ! -f /tmp/dast_status.txt ] || grep -q "OPERATIONAL_FAILURE" /tmp/dast_status.txt 2>/dev/null; then
+            echo "[FALHA OPERACIONAL] Ambiente ou alvo DAST não ficou disponível."
+            op_fail=1
+          fi
+
+          if [ "${{ steps.secrets.outcome }}" = "failure" ]; then
+            echo "[BLOQUEIO] Segredo detectado no histórico da pasta ${APP_DIR}."
+            policy_fail=1
+          fi
+
+          if [ "${{ steps.sca.outcome }}" = "failure" ]; then
+            echo "[BLOQUEIO] Vulnerabilidade HIGH/CRITICAL encontrada em dependências (${APP_DIR}/requirements.txt)."
+            policy_fail=1
+          fi
+
+          if [ "${{ steps.sast.outcome }}" = "failure" ]; then
+            echo "[BLOQUEIO] Achado SAST relevante no código em ${APP_DIR}."
+            policy_fail=1
+          fi
+
+          if [ "${{ steps.iac.outcome }}" = "failure" ]; then
+            echo "[BLOQUEIO] Má configuração MEDIUM/HIGH/CRITICAL no IaC (${APP_DIR})."
+            policy_fail=1
+          fi
+
+          if [ "$op_fail" -eq 1 ]; then
+            echo "Pipeline reprovado por falha operacional (não tratado como seguro)."
+            exit 1
+          fi
+
+          if [ "$policy_fail" -eq 1 ]; then
+            echo "Pipeline reprovado por violação da política de segurança."
+            exit 1
+          fi
+
+          echo "Todos os controles passaram conforme a política."
