@@ -20,8 +20,9 @@ POLLARD_MAX_ATTEMPTS = 100
 # Try attacking numbers of size 2^5 to 2^7 bits, as larger numbers take too long to factor
 POLLARD_ATTACK_SIZES = [2**i for i in range(3, 9)]
 
-
 # Wiener's Attack
+WIENER_ATTACK_SIZES = [2**i for i in range(3, 11)]
+
 
 # Hastad's Broadcast Attack
 # Hastad's attack works when the same message is sent to multiple recipients with the same small exponent e.

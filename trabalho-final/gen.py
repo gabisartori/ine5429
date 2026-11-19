@@ -2,6 +2,30 @@ import random
 import time
 import config
 
+def gcd(a: int, b: int) -> int:
+  """Calculate the greatest common divisor of two integers using the Euclidean algorithm."""
+  while b:
+    a, b = b, a % b
+  return abs(a)
+
+def multiplicative_inverse(a: int, m: int) -> int | None:
+  """Calculate the multiplicative inverse of a modulo m using the Extended Euclidean algorithm."""
+  m0, x0, x1 = m, 0, 1
+  if m == 1:
+    return 0
+  while a > 1:
+    # q is quotient
+    if m == 0:
+      return None  # Inverse doesn't exist
+    q = a // m
+    m, a = a % m, m
+    x0, x1 = x1 - q * x0, x0
+  if x1 < 0:
+    x1 += m0
+  return x1
+
+
+
 def is_prime_certain(n: int) -> bool:
   if n <= 1: return False
   for i in range(2, int(n**0.5) + 1):
@@ -68,6 +92,21 @@ def weak_pollard_prime(bits: int) -> int:
   """Generate a weak prime number suitable for Pollard's p-1 attack."""
   return 3
 
+def rsa(size: int) -> tuple[int, int, int, int]:
+  while True:
+    p = random_prime(size)
+    q = random_prime(size)
+    n = p * q
+    phi = (p - 1) * (q - 1)
+    e, d = 0, 0
+    for i in range(3, phi, 2):
+      if gcd(i, phi) == 1:
+        e = i
+        d = multiplicative_inverse(e, phi)
+        break
+    if d is not None:
+      return p, q, e, d
+
 def test():
   """Run tests for the primality tests."""
   for n in range(1, 100000):
@@ -79,5 +118,11 @@ def test():
   random_prime(1024)
   end = time.time()
   print(f"Time to generate a random 1024-bit prime: {end - start} seconds")
+
+  start = time.time()
+  rsa(1024)
+  end = time.time()
+  print(f"Time to generate RSA keys with 1024-bit primes: {end - start} seconds")
+
 if __name__ == "__main__":
   test()
