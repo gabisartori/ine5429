@@ -216,7 +216,9 @@ def chinese_remainder_theorem(
 
   # I think this one garantees that the result is unique mod N, since all ni are coprime
   result = (sum([
-    ai * (N // ni) * gen.multiplicative_inverse(N // ni, ni)
+    # This "or 1" for the multiplicative inverse is not needed, it's just there to silence the type checking.
+    # Since all ni are coprime, the multiplicative inverse will always exist.
+    ai * (N // ni) * (gen.multiplicative_inverse(N // ni, ni) or 1)
     for ni, ai in zip(n, a)
   ])% N)
 
