@@ -21,7 +21,10 @@ class PollardResult(Enum):
 def pollard(n: int, b: int) -> tuple[PollardResult, int, int]:
   m = math.lcm(*range(1, b+1))
   a = 2
-  g = gen.gcd((a**m-1) % n, n)
+  for i in range(2, b+1):
+    a = pow(a, i, n)
+  g = gen.gcd((a-1) % n, n)
+
   if g == n:
     return (PollardResult.DECREASE, 0, 0)
   elif g == 1:
@@ -40,68 +43,51 @@ class PollardAttackData:
   ratio: float # Ratio of successful attacks to total attempts for prime numbers of size s
   time: float # Time it took to find a vulnerable prime of size s
   avarage_time: float # Average time it took to test a prime of size s
+  avarage_b_value: float # Avarage Smoothness value for moment of success or failure
 
 def pollard_attack(max_b_size: int = config.MAX_B) -> list[PollardAttackData]:
   output = []
   # Attack random primes of varying sizes
-  for size in config.POLLARD_ATTACK_SIZES:
-    successes = 0
-    failures = 0
-    size_start = time.time()
-    for _ in range(config.POLLARD_MAX_ATTEMPTS):
-      p = gen.random_prime(size)
-      q = gen.random_prime(size)
-      n = p*q
+  for fabricate in [True, False]:
+    for size in config.POLLARD_ATTACK_SIZES:
+      successes = 0
+      failures = 0
+      size_start = time.time()
+      avarage_b_value = 0
+      for _ in range(config.POLLARD_MAX_ATTEMPTS):
+        p = gen.random_prime(size)
+        q = gen.random_prime(size)
+        n = gen.weak_pollard_prime(size)+1 if fabricate else p*q
 
-      b = 2
-      success = False
-      while b < max_b_size:
-        match pollard(n, b):
-          case (PollardResult.DECREASE, _, _):
-            failures += 1
-            break
-          case (PollardResult.RAISE, _, _):
-            b += 1
-          case (PollardResult.SUCCESS, p, q):
-            successes += 1
-            success = True
-            break
-      if not success:
-        failures += 1
-    end = time.time()
-    total_time = end - size_start
-    o = PollardAttackData(False, size, successes, failures, successes/(successes+failures), total_time, total_time / config.POLLARD_MAX_ATTEMPTS)
-    output.append(o)
-
-  # Attack forged primes of varying sizes
-  for size in config.POLLARD_ATTACK_SIZES:
-    successes = 0
-    failures = 0
-    size_start = time.time()
-    for _ in range(config.POLLARD_MAX_ATTEMPTS):
-      p = gen.weak_pollard_prime(size)
-      q = gen.weak_pollard_prime(size)
-      n = p*q
-
-      b = 2
-      success = False
-      while b < max_b_size:
-        match pollard(n, b):
-          case (PollardResult.DECREASE, _, _):
-            failures += 1
-            break
-          case (PollardResult.RAISE, _, _):
-            b += 1
-          case (PollardResult.SUCCESS, p, q):
-            successes += 1
-            success = True
-            break
-      if not success:
-        failures += 1
-    end = time.time()
-    total_time = end - size_start
-    o = PollardAttackData(True, size, successes, failures, successes/(successes+failures), total_time, total_time / config.POLLARD_MAX_ATTEMPTS)
-    output.append(o)
+        b = 2
+        b_prev = 0
+        success = False
+        while b < max_b_size:
+          result, p, q = pollard(n, b)
+          match result:
+            case PollardResult.DECREASE:
+              if b < b_prev: b, b_prev = b//2, b
+              elif b > b_prev: b = (b+b_prev)//2
+              else: 
+                avarage_b_value += b
+                break
+            case PollardResult.RAISE:
+              if b < b_prev: b = (b+b_prev)//2
+              elif b > b_prev: b, b_prev = (b+config.MAX_B)//2, b
+              else: 
+                avarage_b_value += b
+                break
+            case PollardResult.SUCCESS:
+              successes += 1
+              success = True
+              avarage_b_value += b
+              break
+        if not success:
+          failures += 1
+      end = time.time()
+      total_time = end - size_start
+      o = PollardAttackData(fabricate, size, successes, failures, successes/(successes+failures), total_time, total_time / config.POLLARD_MAX_ATTEMPTS, avarage_b_value / (successes+failures))
+      output.append(o)
 
   return output
 
