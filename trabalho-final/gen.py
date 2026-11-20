@@ -1,5 +1,8 @@
 import random
 import time
+import math
+import argparse
+
 import config
 
 def gcd(a: int, b: int) -> int:
@@ -23,8 +26,6 @@ def multiplicative_inverse(a: int, m: int) -> int | None:
   if x1 < 0:
     x1 += m0
   return x1
-
-
 
 def is_prime_certain(n: int) -> bool:
   if n <= 1: return False
@@ -88,9 +89,22 @@ def random_prime(bits: int) -> int:
 
 # TODO: Implement a function to generate weak primes suitable for Pollard's p-1 attack
 # This should be a product of small primes + 1.
-def weak_pollard_prime(bits: int) -> int:
-  """Generate a weak prime number suitable for Pollard's p-1 attack."""
-  return 3
+def weak_pollard_prime(size: int, smooth_bound: int = 6) -> int:
+  """Generate a size-bit prime p such that p-1 is smooth."""
+  smooth = math.prod(
+    p for p in range(2, smooth_bound + 1)
+    if is_prime_certain(p)
+  )
+
+  low = 1 << (size - 1)
+  high = 1 << size
+
+  while True:
+    k = random.randint(1, (high - 1) // smooth)
+    p = k * smooth + 1
+
+    if low <= p < high and is_prime(p):
+      return p
 
 def rsa(size: int) -> tuple[int, int, int, int]:
   while True:
@@ -107,22 +121,34 @@ def rsa(size: int) -> tuple[int, int, int, int]:
     if d is not None:
       return p, q, e, d
 
-def test():
+def test(case: str):
   """Run tests for the primality tests."""
-  for n in range(1, 100000):
-    expected = is_prime_certain(n)
-    assert is_prime(n) == expected, f"Failed for {n}: expected {expected}, got {is_prime(n)}"
+  match case:
+    case "prime-check":  
+      for n in range(1, 100000):
+        expected = is_prime_certain(n)
+        assert is_prime(n) == expected, f"Failed for {n}: expected {expected}, got {is_prime(n)}"
+    case "random-prime":
+      start = time.time()
+      random_prime(1024)
+      end = time.time()
+      print(f"Time to generate a random 1024-bit prime: {end - start} seconds")
+    case "rsa":
+      start = time.time()
+      rsa(1024)
+      end = time.time()
+      print(f"Time to generate RSA keys with 1024-bit primes: {end - start} seconds")
+    case "pollard":
+      start = time.time()
+      p = weak_pollard_prime(5)
+      end = time.time()
+      print(f"Time to generate a weak prime = {p}: {end - start} seconds")
+    case _:
+      print(f"Unknown test case: {case}")
 
-
-  start = time.time()
-  random_prime(1024)
-  end = time.time()
-  print(f"Time to generate a random 1024-bit prime: {end - start} seconds")
-
-  start = time.time()
-  rsa(1024)
-  end = time.time()
-  print(f"Time to generate RSA keys with 1024-bit primes: {end - start} seconds")
 
 if __name__ == "__main__":
-  test()
+  args = argparse.ArgumentParser(description="Run tests for the primality tests.")
+  args.add_argument("case", type=str, help="The test case to run: prime-check, random-prime, rsa, pollard")
+  args = args.parse_args()
+  test(args.case)
