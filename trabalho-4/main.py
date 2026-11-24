@@ -2,7 +2,7 @@ m1 = "'8I8VLJ8IVFVM<I@=@:8;FIV:FEJLCK<".encode("ascii")
 m2 = "V8JV@EKIL:F<JbVBsGHMHM@QVw{*6yxy".encode("ascii")
 
 start = ord(" ")
-end = ord("~")+1 # I guess the hint was off, to get a coherent message I needed to round at 127 instead of 126
+end = ord("~")+1
 
 def cesar(message: bytes, shift: int, start: int, end: int):
   return bytes([
