@@ -45,11 +45,12 @@ class PollardAttackData:
   avarage_time: float # Average time it took to test a prime of size s
   avarage_b_value: float # Avarage Smoothness value for moment of success or failure
 
-def pollard_attack(max_b_size: int = config.MAX_B) -> list[PollardAttackData]:
+def pollard_attack(s: int | None = None, max_b_size: int = config.MAX_B) -> list[PollardAttackData]:
   output = []
+  sizes = config.POLLARD_ATTACK_SIZES if s is None else [s]
   # Attack random primes of varying sizes
   for fabricate in [True, False]:
-    for size in config.POLLARD_ATTACK_SIZES:
+    for size in sizes:
       successes = 0
       failures = 0
       size_start = time.time()
@@ -169,10 +170,11 @@ class WienerAttackData:
   q: int | None # Second prime factor of n recovered from Wiener's attack
   time: float # Time it took to perform the Wiener's attack
 
-def wiener_attack() -> list[WienerAttackData]:
+def wiener_attack(s: int | None = None) -> list[WienerAttackData]:
   output = []
+  sizes = config.WIENER_ATTACK_SIZES if s is None else [s]
   for fabricate in [True, False]:
-    for size in config.WIENER_ATTACK_SIZES:
+    for size in sizes:
       p, q, e, d = gen.rsa(size)
       n = p * q
       # Ignore cases where d is too large, as they are not vulnerable to Wiener's attack
@@ -217,9 +219,10 @@ class HastadAttackData:
   recovered_message: int # Message recovered from the Hastad attack
   time: float # Time it took to perform the Hastad attack
 
-def hastad_attack():
+def hastad_attack(s: int | None = None):
   output = []
-  for e in range(2, 100):
+  size = range(s, s+1) if s else range(2, 100)
+  for e in size:
     start = time.time()
     primes = [gen.random_prime(512) for _ in range(2*e)]
     m = 67
@@ -238,13 +241,25 @@ def hastad_attack():
 def main():
   args = argparse.ArgumentParser(description="Run various attacks on RSA.")
   args.add_argument("attack", choices=["pollard", "wiener", "hastad"], help="The attack to run.")
+  args.add_argument("size", type=int, help="Size of attack")
+  args.add_argument("--human", type=bool, help="Set human readable output")
   args = args.parse_args()
+  output = []
   match args.attack:
-    case "pollard":
-      for x in pollard_attack(): print(x)
-    case "wiener":
-      for x in wiener_attack(): print(x)
-    case "hastad":
-      for x in hastad_attack(): print(x)
+    case "pollard": 
+      output = pollard_attack(args.size)
+      print(f"Tempo para quebra do número forjado: {output[0].avarage_time}. {'Sucesso' if output[0].successes else 'Fracasso'}")
+      print(f"Tempo para quebra do número aleatório: {output[1].avarage_time}. {'Sucesso' if output[1].successes else 'Fracasso'}")
+    case "wiener": 
+      output = wiener_attack(args.size)
+      print(f"Tempo para quebra do número forjado: {output[0].time}. {'Sucesso' if output[0].retrieved_d is not None else 'Falhou'}")
+      print(f"Tempo para quebra do número aleatório: {output[1].time}. {'Sucesso' if output[1].retrieved_d is not None else 'Falhou'}")
+    case "hastad": 
+      output = hastad_attack(args.size)
+      print(f"Tempo para quebra da mensagem com e={output[0].e}: {output[0].time}")
+
+
+  if not args.human:
+    for x in output: print(x)
 
 if __name__ == "__main__": main()
